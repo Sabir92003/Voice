@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gemini Voice Assistant</title>
+    <title>Gemini AI - Voice & Text Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         :root {
@@ -23,19 +23,16 @@
         .msg { max-width: 80%; padding: 12px 16px; border-radius: 18px; line-height: 1.5; font-size: 15px; animation: fadeIn 0.3s ease; }
         .user-msg { align-self: flex-end; background: var(--user-bubble); color: white; border-bottom-right-radius: 2px; }
         .ai-msg { align-self: flex-start; background: var(--card); border: 1px solid rgba(255,255,255,0.1); border-bottom-left-radius: 2px; }
+        .ai-msg img { max-width: 100%; border-radius: 10px; margin-top: 10px; border: 2px solid var(--accent); }
         .input-area { background: var(--card); padding: 20px; display: flex; gap: 10px; border-top: 1px solid rgba(255,255,255,0.1); }
         input { flex: 1; background: rgba(0,0,0,0.2); border: 1px solid #475569; padding: 12px; border-radius: 12px; color: white; outline: none; }
+        
         button { border: none; padding: 0 20px; border-radius: 12px; font-weight: bold; cursor: pointer; transition: 0.3s; }
         #sendBtn { background: var(--accent); color: #0f172a; }
         #micBtn { background: #475569; color: white; font-size: 20px; width: 60px; }
         
-        /* Pulse Animation when Mic is Active */
-        #micBtn.listening { 
-            background: #ef4444; 
-            box-shadow: 0 0 15px #ef4444;
-            animation: pulse 1.5s infinite;
-        }
-        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+        #micBtn.listening { background: #ef4444; animation: pulse 1.5s infinite; box-shadow: 0 0 15px #ef4444; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         #loader { display: none; font-size: 12px; color: var(--accent); margin-bottom: 5px; text-align: center; }
     </style>
@@ -47,7 +44,7 @@
     </div>
 
     <div class="chat-container" id="chat">
-        <div class="msg ai-msg">Microphone ready! Click 🎙️ to talk or type below.</div>
+        <div class="msg ai-msg">Welcome! I'm ready. Click 🎙️ to talk or type below.</div>
     </div>
 
     <div class="input-area">
@@ -62,8 +59,11 @@
     </div>
 
     <script>
+        // 1. SET YOUR API KEY HERE
         const API_KEY = "AIzaSyCTCC22AQSRiRc3Al6b_R9cH-f21C8yZOU";
-        const MODEL_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+
+        // 2. STABLE MODELS LIST
+        const MODEL_IDS = ["gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-pro"];
 
         const chat = document.getElementById('chat');
         const input = document.getElementById('userInput');
@@ -75,28 +75,26 @@
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (SpeechRecognition) {
             const recognition = new SpeechRecognition();
-            recognition.continuous = false;
             recognition.lang = 'en-US';
 
             micBtn.onclick = () => {
-                recognition.start();
-                micBtn.classList.add('listening');
+                try {
+                    recognition.start();
+                    micBtn.classList.add('listening');
+                } catch(e) { recognition.stop(); }
             };
 
             recognition.onresult = (event) => {
-                const speechToText = event.results[0][0].transcript;
-                input.value = speechToText;
-                askAI(); // Automatically send after speaking
+                input.value = event.results[0][0].transcript;
+                askAI();
             };
 
-            recognition.onend = () => {
-                micBtn.classList.remove('listening');
-            };
-
+            recognition.onend = () => micBtn.classList.remove('listening');
+            
             recognition.onerror = (err) => {
                 micBtn.classList.remove('listening');
-                if (err.error === 'not-allowed') {
-                    alert("⚠️ MIC BLOCKED: Browser security does not allow microphones on local 'file://' links. Please use 'Live Server' in VS Code or host on GitHub.");
+                if(err.error === 'not-allowed') {
+                    appendMsg("❌ Mic blocked. You must use a **Local Server** (like Live Server) or **HTTPS** for the mic to work.", 'ai');
                 }
             };
         }
@@ -110,18 +108,40 @@
             input.value = '';
             loader.style.display = 'block';
 
-            try {
-                const response = await fetch(MODEL_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: text }] }] })
-                });
+            let finalPrompt = text;
+            const isVisual = /photo|image|picture|show me/i.test(text);
+            if (isVisual) {
+                finalPrompt += " (Markdown image: ![image](https://loremflickr.com/600/400/" + text.split(' ').pop() + "))";
+            }
 
-                const data = await response.json();
-                const aiText = data.candidates[0].content.parts[0].text;
-                appendMsg(aiText, 'ai');
-            } catch (err) {
-                appendMsg("⚠️ Error: Check your internet or API key.", 'ai');
+            let success = false;
+            let lastError = "";
+
+            // Loop through models until one works
+            for (let modelId of MODEL_IDS) {
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${API_KEY}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: finalPrompt }] }] })
+                    });
+
+                    const data = await response.json();
+
+                    if (data.candidates && data.candidates[0].content) {
+                        appendMsg(data.candidates[0].content.parts[0].text, 'ai');
+                        success = true;
+                        break;
+                    } else if (data.error) {
+                        lastError = data.error.message;
+                    }
+                } catch (err) {
+                    lastError = "Network/CORS error. Please use a Local Server.";
+                }
+            }
+
+            if (!success) {
+                appendMsg(`⚠️ Error: ${lastError}`, 'ai');
             }
             loader.style.display = 'none';
         }
