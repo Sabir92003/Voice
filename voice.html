@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini Voice Assistant</title>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root {
+            --bg: #0f172a;
+            --card: rgba(30, 41, 59, 0.7);
+            --accent: #38bdf8;
+            --user-bubble: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+            --text: #f8fafc;
+        }
+        body { 
+            margin: 0; font-family: 'Inter', sans-serif; 
+            background: radial-gradient(circle at top left, #1e1b4b, #0f172a);
+            color: var(--text); height: 100vh; display: flex; flex-direction: column; 
+        }
+        .header { padding: 15px; background: var(--card); text-align: center; border-bottom: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); }
+        .chat-container { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
+        .msg { max-width: 80%; padding: 12px 16px; border-radius: 18px; line-height: 1.5; font-size: 15px; animation: fadeIn 0.3s ease; }
+        .user-msg { align-self: flex-end; background: var(--user-bubble); color: white; border-bottom-right-radius: 2px; }
+        .ai-msg { align-self: flex-start; background: var(--card); border: 1px solid rgba(255,255,255,0.1); border-bottom-left-radius: 2px; }
+        .input-area { background: var(--card); padding: 20px; display: flex; gap: 10px; border-top: 1px solid rgba(255,255,255,0.1); }
+        input { flex: 1; background: rgba(0,0,0,0.2); border: 1px solid #475569; padding: 12px; border-radius: 12px; color: white; outline: none; }
+        button { border: none; padding: 0 20px; border-radius: 12px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        #sendBtn { background: var(--accent); color: #0f172a; }
+        #micBtn { background: #475569; color: white; font-size: 20px; width: 60px; }
+        
+        /* Pulse Animation when Mic is Active */
+        #micBtn.listening { 
+            background: #ef4444; 
+            box-shadow: 0 0 15px #ef4444;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.6; } 100% { opacity: 1; } }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        #loader { display: none; font-size: 12px; color: var(--accent); margin-bottom: 5px; text-align: center; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <h2 style="margin:0; background: linear-gradient(to right, #38bdf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Gemini Smart Voice</h2>
+    </div>
+
+    <div class="chat-container" id="chat">
+        <div class="msg ai-msg">Microphone ready! Click 🎙️ to talk or type below.</div>
+    </div>
+
+    <div class="input-area">
+        <div style="width: 100%;">
+            <div id="loader">Gemini is thinking... ✨</div>
+            <div style="display: flex; gap: 10px;">
+                <button id="micBtn">🎙️</button>
+                <input type="text" id="userInput" placeholder="Ask me something..." autocomplete="off">
+                <button id="sendBtn">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_KEY = "AIzaSyCTCC22AQSRiRc3Al6b_R9cH-f21C8yZOU";
+        const MODEL_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+
+        const chat = document.getElementById('chat');
+        const input = document.getElementById('userInput');
+        const micBtn = document.getElementById('micBtn');
+        const sendBtn = document.getElementById('sendBtn');
+        const loader = document.getElementById('loader');
+
+        // --- MICROPHONE LOGIC ---
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            const recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.lang = 'en-US';
+
+            micBtn.onclick = () => {
+                recognition.start();
+                micBtn.classList.add('listening');
+            };
+
+            recognition.onresult = (event) => {
+                const speechToText = event.results[0][0].transcript;
+                input.value = speechToText;
+                askAI(); // Automatically send after speaking
+            };
+
+            recognition.onend = () => {
+                micBtn.classList.remove('listening');
+            };
+
+            recognition.onerror = (err) => {
+                micBtn.classList.remove('listening');
+                if (err.error === 'not-allowed') {
+                    alert("⚠️ MIC BLOCKED: Browser security does not allow microphones on local 'file://' links. Please use 'Live Server' in VS Code or host on GitHub.");
+                }
+            };
+        }
+
+        // --- AI LOGIC ---
+        async function askAI() {
+            const text = input.value.trim();
+            if (!text) return;
+
+            appendMsg(text, 'user');
+            input.value = '';
+            loader.style.display = 'block';
+
+            try {
+                const response = await fetch(MODEL_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: text }] }] })
+                });
+
+                const data = await response.json();
+                const aiText = data.candidates[0].content.parts[0].text;
+                appendMsg(aiText, 'ai');
+            } catch (err) {
+                appendMsg("⚠️ Error: Check your internet or API key.", 'ai');
+            }
+            loader.style.display = 'none';
+        }
+
+        function appendMsg(text, sender) {
+            const div = document.createElement('div');
+            div.className = `msg ${sender}-msg`;
+            div.innerHTML = sender === 'ai' ? marked.parse(text) : text;
+            chat.appendChild(div);
+            chat.scrollTop = chat.scrollHeight;
+        }
+
+        sendBtn.onclick = askAI;
+        input.onkeypress = (e) => { if (e.key === 'Enter') askAI(); };
+    </script>
+</body>
+</html>
