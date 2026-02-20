@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gemini AI Assistant - Voice & Text</title>
+    <title>Gemini AI - Voice & Text</title>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
         :root {
@@ -29,27 +29,27 @@
         
         button { border: none; padding: 0 20px; border-radius: 12px; font-weight: bold; cursor: pointer; transition: 0.2s; }
         #sendBtn { background: var(--accent); color: #0f172a; }
-        #micBtn { background: #475569; color: white; font-size: 18px; width: 50px; }
+        #micBtn { background: #475569; color: white; font-size: 18px; }
         #micBtn.listening { background: #ef4444; animation: pulse 1.5s infinite; }
         
-        #loader { display: none; font-size: 12px; color: var(--accent); margin-bottom: 5px; text-align: center; font-weight: bold; }
+        #loader { display: none; font-size: 12px; color: var(--accent); margin-bottom: 5px; text-align: center; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); } }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
 
     <div class="header">
-        <h2 style="margin:0; background: linear-gradient(to right, #38bdf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Gemini Pro Assistant</h2>
+        <h2 style="margin:0; background: linear-gradient(to right, #38bdf8, #c084fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">Gemini Voice Assistant</h2>
     </div>
 
     <div class="chat-container" id="chat">
-        <div class="msg ai-msg">API Connected. Type a message or click the 🎙️ to speak!</div>
+        <div class="msg ai-msg">Hello! Click the 🎙️ to speak or type your question below.</div>
     </div>
 
     <div class="input-area">
         <div style="width: 100%;">
-            <div id="loader">GEMINI IS THINKING... ✨</div>
+            <div id="loader">Thinking... ✨</div>
             <div style="display: flex; gap: 10px;">
                 <button id="micBtn" title="Speak">🎙️</button>
                 <input type="text" id="userInput" placeholder="Ask me anything..." autocomplete="off">
@@ -59,7 +59,6 @@
     </div>
 
     <script>
-        // REPLACE WITH YOUR KEY
         const API_KEY = "AIzaSyCTCC22AQSRiRc3Al6b_R9cH-f21C8yZOU";
         const MODEL_IDS = ["gemini-3-flash-preview", "gemini-2.5-flash", "gemini-1.5-flash-latest"];
 
@@ -69,55 +68,46 @@
         const micBtn = document.getElementById('micBtn');
         const loader = document.getElementById('loader');
 
-        // --- 1. VOICE RECOGNITION (MIC) LOGIC ---
+        // --- VOICE RECOGNITION SETUP ---
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition;
         
         if (SpeechRecognition) {
-            const recognition = new SpeechRecognition();
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
             recognition.lang = 'en-US';
-            recognition.interimResults = false;
 
             recognition.onstart = () => {
                 micBtn.classList.add('listening');
                 input.placeholder = "Listening...";
             };
 
+            recognition.onspeechend = () => {
+                recognition.stop();
+                micBtn.classList.remove('listening');
+                input.placeholder = "Ask me anything...";
+            };
+
             recognition.onresult = (event) => {
                 const transcript = event.results[0][0].transcript;
                 input.value = transcript;
-                askAI(); // Auto-send when finished speaking
+                askAI(); // Automatically send after speaking
             };
 
             recognition.onerror = (event) => {
+                console.error("Speech Error:", event.error);
                 micBtn.classList.remove('listening');
-                input.placeholder = "Ask me anything...";
-                
-                // Common Errors explained
-                if (event.error === 'not-allowed') {
-                    alert("Mic Access Denied! Please host this code on a server (like Live Server or GitHub Pages) and allow mic permissions.");
-                } else {
-                    console.error("Speech Error:", event.error);
-                }
-            };
-
-            recognition.onend = () => {
-                micBtn.classList.remove('listening');
-                input.placeholder = "Ask me anything...";
-            };
-
-            micBtn.onclick = () => {
-                try {
-                    recognition.start();
-                } catch (e) {
-                    recognition.stop();
-                }
             };
         } else {
             micBtn.style.display = 'none';
-            console.warn("Browser does not support Speech Recognition.");
+            console.log("Speech recognition not supported in this browser.");
         }
 
-        // --- 2. GEMINI API LOGIC ---
+        micBtn.addEventListener('click', () => {
+            recognition.start();
+        });
+
+        // --- CHAT LOGIC ---
         async function askAI() {
             const text = input.value.trim();
             if (!text) return;
@@ -126,13 +116,13 @@
             input.value = '';
             loader.style.display = 'block';
 
-            // Filter images so they only appear if asked for
             let finalPrompt = text;
             const isVisual = /photo|image|picture|show me|draw/i.test(text);
+            
             if (isVisual) {
-                finalPrompt += " (Use Markdown ![image](https://loremflickr.com/600/400/" + text.split(' ').pop() + ") only for this request.)";
+                finalPrompt += " (Strict: Use Markdown ![image](https://loremflickr.com/600/400/" + text.split(' ').pop() + ") ONLY if I specifically asked for a visual. Otherwise, just text.)";
             } else {
-                finalPrompt += " (Text only, no images.)";
+                finalPrompt += " (Respond with text only. No images.)";
             }
 
             let success = false;
@@ -149,9 +139,9 @@
                         success = true;
                         break;
                     }
-                } catch (e) { console.log("Trying next model..."); }
+                } catch (e) { console.log("Next model..."); }
             }
-            if (!success) appendMsg("⚠️ Failed to get a response. Check your API key.", 'ai');
+            if (!success) appendMsg("⚠️ Connection failed.", 'ai');
             loader.style.display = 'none';
         }
 
@@ -163,8 +153,8 @@
             chat.scrollTop = chat.scrollHeight;
         }
 
-        sendBtn.onclick = askAI;
-        input.onkeypress = (e) => { if(e.key === 'Enter') askAI(); };
+        sendBtn.addEventListener('click', askAI);
+        input.addEventListener('keypress', (e) => { if(e.key === 'Enter') askAI(); });
     </script>
 </body>
 </html>
